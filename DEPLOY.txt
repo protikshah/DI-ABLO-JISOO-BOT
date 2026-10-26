@@ -1,0 +1,23 @@
+DI-ABLO JIsoo — COMPLETE (VIP + commands)
+========================================
+
+1) Unzip this folder completely
+2) Put your cookie in account.txt
+3) Check config.json MongoDB URI (or set MONGODB_URI on Render)
+4) npm install
+5) npm start
+
+Render:
+- NODE_VERSION = 20.18.1
+- MONGODB_URI = your Atlas URI
+- Start: npm start
+- Push whole folder to GitHub then deploy
+
+VIP commands:
+  zx vip
+  zx vip buy 1|2|5|10
+  zx vip list
+  zx vip add 1|3|5   (owner UID only: 61595585722894)
+  zx vip remove clear / vip remove 1
+
+Prefix: zx
