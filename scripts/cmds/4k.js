@@ -1,52 +1,105 @@
 const axios = require("axios");
+
+const API_CONFIG_URL = "https://raw.githubusercontent.com/negative-xalman/xalmanx210/refs/heads/main/apis.json";
+const API_KEY = "xalman-hub";
+let apiBaseUrl = null;
+let apiConfigRequest = null;
+
+async function getApiBaseUrl() {
+  if (apiBaseUrl) return apiBaseUrl;
+
+  if (!apiConfigRequest) {
+    apiConfigRequest = axios
+      .get(API_CONFIG_URL, { timeout: 15000 })
+      .then(({ data }) => {
+        const baseUrl = data?.[API_KEY];
+
+        if (typeof baseUrl !== "string" || !baseUrl.trim()) {
+          throw new Error(`Missing API key in apis.json: ${API_KEY}`);
+        }
+
+        apiBaseUrl = baseUrl.replace(/\/+$/, "");
+        return apiBaseUrl;
+      })
+      .finally(() => {
+        apiConfigRequest = null;
+      });
+  }
+
+  return apiConfigRequest;
+}
 const fs = require("fs-extra");
 const path = require("path");
-const sharp = require("sharp");
 
 module.exports = {
   config: {
     name: "4k",
-    version: "2.1.0",
-    author: "Arafat",
-    countDown: 5,
+    aliases: ["upscale"],
+    version: "3.1",
+    author: "xalman",
+    countDown: 15,
     role: 0,
-    shortDescription: { en: "High Quality Image Enhancer" },
-    category: "image"
+    shortDescription: "AI Image Upscaler",
+    longDescription: "Reply to any image using the command and get 4k results",
+    category: "IMAGE",
+    guide: "{pn} reply to an image"
   },
 
-  onStart: async function ({ message, event, api }) {
-    const { messageReply, messageID, threadID } = event;
-    if (!messageReply?.attachments?.[0]?.url) return message.reply("❌ Please reply to an image.");
+  onStart: async function ({ event, message }) {
+    const { messageReply, type } = event;
+
+    if (
+      type !== "message_reply" ||
+      !messageReply.attachments ||
+      messageReply.attachments[0].type !== "photo"
+    ) {
+      return message.reply("⚠️ Please reply to an image to upscale it to 4K.");
+    }
 
     const imageUrl = messageReply.attachments[0].url;
-    const apiBase = "https://4k-v2.vercel.app"; 
+    const cacheDir = path.join(__dirname, "cache");
+    const filePath = path.join(cacheDir, `upscale_${Date.now()}.png`);
 
-    message.reaction("⚡", messageID);
-    const loadingMsg = await api.sendMessage("⚡ Enhancing...", threadID);
+    if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+
+    await message.reply("⏳ Processing your image to .. This may take a moment.");
 
     try {
-      const response = await axios.get(`${apiBase}/api/enhance?url=${encodeURIComponent(imageUrl)}`);
-      const resultUrl = response.data.imageUrl;
+      const UPSCALE_API = `${await getApiBaseUrl()}/api/upscale`;
 
-      if (!resultUrl) throw new Error("No URL");
+      const res = await axios.post(
+        UPSCALE_API,
+        { imageUrl: imageUrl },
+        {
+          responseType: "arraybuffer",
+          timeout: 300000
+        }
+      );
 
-      const img = await axios.get(resultUrl, { responseType: "arraybuffer" });
-      const cacheDir = path.join(__dirname, "cache");
-      if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir);
-      
-      const filePath = path.join(cacheDir, `hd_${Date.now()}.jpg`);
-      await sharp(Buffer.from(img.data)).jpeg({ quality: 100 }).toFile(filePath);
+      await fs.writeFile(filePath, Buffer.from(res.data));
 
-      api.unsendMessage(loadingMsg.messageID);
-      await message.reply({ attachment: fs.createReadStream(filePath) });
-      
-      message.reaction("✅", messageID);
-      
-      setTimeout(() => { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); }, 5000);
+      await message.reply({
+        body: "✅ нєяє ιѕ уσυя 4к вву 🥀",
+        attachment: fs.createReadStream(filePath)
+      });
+
+      setTimeout(() => {
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      }, 5000);
+
     } catch (err) {
-      api.unsendMessage(loadingMsg.messageID);
-      message.reply("❌ Error! Could not enhance the image.");
-      message.reaction("💔", messageID);
+      console.error("UPSCALE ERROR:", err);
+
+      let errorMsg = "❌ Upscale service is currently unavailable.";
+      if (err.code === "ECONNABORTED") {
+        errorMsg = "❌ Server timeout: The image processing took too long.";
+      } else if (err.response) {
+        errorMsg = `❌ API Error: ${err.response.status} - ${err.response.statusText}`;
+      }
+
+      message.reply(errorMsg);
+
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     }
   }
 };
